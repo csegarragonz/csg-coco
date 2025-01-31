@@ -31,23 +31,24 @@ CONTAINERD_CTR_BINPATH = "/go/src/github.com/sc2-sys/containerd/bin"
 CONTAINERD_HOST_BINPATH = "/usr/bin"
 
 
-def do_build(debug=False):
-    docker_cmd = "docker build -t {} -f {} .".format(
+def do_build(nocache=False):
+    docker_cmd = "docker build{} -t {} -f {} .".format(
+        " --no-cache" if nocache else "",
         CONTAINERD_IMAGE_TAG,
         join(PROJ_ROOT, "docker", "containerd.dockerfile"),
     )
-    result = run(docker_cmd, shell=True, capture_output=True, cwd=PROJ_ROOT)
-    assert result.returncode == 0, print(result.stderr.decode("utf-8").strip())
-    if debug:
-        print(result.stdout.decode("utf-8").strip())
+    run(docker_cmd, shell=True, check=True, cwd=PROJ_ROOT)
 
 
 @task
-def build(ctx):
+def build(ctx, nocache=False, push=False):
     """
     Build the containerd fork for CoCo
     """
-    do_build(debug=True)
+    do_build(nocache=nocache)
+
+    if push:
+        run(f"docker push {CONTAINERD_IMAGE_TAG}", shell=True, check=True)
 
 
 @task
@@ -73,19 +74,23 @@ def cli(ctx, mount_path=join(PROJ_ROOT, "..", "containerd")):
 
 
 @task
-def set_log_level(ctx, log_level):
+def stop(ctx):
+    """
+    Stop the containerd work-on container
+    """
+    result = run(
+        "docker rm -f {}".format(CONTAINERD_CTR_NAME),
+        shell=True,
+        check=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0
+
+
+def set_log_level(log_level):
     """
     Set containerd's log level, must be one in: info, debug
     """
-    allowed_log_levels = ["info", "debug"]
-    if log_level not in allowed_log_levels:
-        print(
-            "Unsupported log level '{}'. Must be one in: {}".format(
-                log_level, allowed_log_levels
-            )
-        )
-        return
-
     updated_toml_str = """
     [debug]
     level = "{log_level}"
